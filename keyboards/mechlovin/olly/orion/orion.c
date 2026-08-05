@@ -83,7 +83,7 @@ static void orion_led_set(uint8_t index, bool on) {
     orion_led_target[index] = on ? orion_led_on_level : 0;
 }
 
-#ifdef VIA_ENABLE
+#if defined(VIA_ENABLE) && defined(ORION_LED_VIA_BRIGHTNESS)
 /* Only the VIA control changes brightness at runtime; without it the level is
  * fixed at compile time and this would be an unused function (-Werror). */
 static void orion_led_apply_brightness(void) {
@@ -188,11 +188,13 @@ layer_state_t layer_state_set_kb(layer_state_t state) {
     return state;
 }
 
-#ifdef VIA_ENABLE
+#if defined(VIA_ENABLE) && defined(ORION_LED_VIA_BRIGHTNESS)
 #    include "via.h"
 
 /* One custom VIA control on the keyboard-specific channel: status LED
- * brightness, 0-255 on the same perceptual scale as ORION_LED_ON_LEVEL. */
+ * brightness, 0-255 on the same perceptual scale as ORION_LED_ON_LEVEL.
+ *
+ * Off by default -- see config.h for why enabling it forces an EEPROM clear. */
 enum orion_via_value_id {
     id_orion_led_brightness = 1,
 };

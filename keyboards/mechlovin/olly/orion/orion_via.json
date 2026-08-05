@@ -10,30 +10,7 @@
     "qmk_lighting"
   ],
   "menus": [
-    "qmk_rgblight",
-    {
-      "label": "Status LEDs",
-      "content": [
-        {
-          "label": "Indicators",
-          "content": [
-            {
-              "label": "Brightness",
-              "type": "range",
-              "options": [
-                0,
-                255
-              ],
-              "content": [
-                "id_orion_led_brightness",
-                0,
-                1
-              ]
-            }
-          ]
-        }
-      ]
-    }
+    "qmk_rgblight"
   ],
   "layouts": {
     "keymap": [

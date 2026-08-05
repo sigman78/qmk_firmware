@@ -39,12 +39,18 @@
 #    define ORION_LED_ON_LEVEL 120
 #endif
 
-/* Two bytes of VIA custom config: a magic byte plus the stored brightness.
- * The magic byte matters -- a never-written or erased EEPROM reads back as
- * 0x00 or 0xFF, and both are legitimate brightness values, so there is no way
- * to distinguish "unset" from "deliberately off / deliberately full" without
- * it. */
-#ifdef VIA_ENABLE
+/* Optional: expose the brightness as a slider in VIA (Status LEDs > Indicators).
+ *
+ * OFF BY DEFAULT, and think before turning it on. It needs two bytes of VIA
+ * custom config, which pushes DYNAMIC_KEYMAP_EEPROM_START up by two -- and
+ * VIA's validity magic is derived from the product string, so it does NOT
+ * notice the move. An EEPROM written by a build without this option is then
+ * read back one keycode out of step: alphas mostly land on other alphas and
+ * look fine, while modifiers, backspace and arrows come out as nonsense.
+ *
+ * So enabling this REQUIRES clearing the EEPROM afterwards. Leaving it off
+ * keeps the stock VIA layout, and brightness stays a compile-time constant. */
+#ifdef ORION_LED_VIA_BRIGHTNESS
 #    define VIA_EEPROM_CUSTOM_CONFIG_SIZE 2
 #endif
 
