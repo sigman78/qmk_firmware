@@ -16,6 +16,30 @@
  * Every value below can be overridden from a keymap's own config.h.
  */
 
+/* WS2812 underglow over SPI2 + DMA instead of bit-banging.
+ *
+ * The bit-bang driver wraps a whole frame in chSysLock(), masking SysTick for
+ * ~1 ms. The status-LED soft PWM below rides on a ChibiOS virtual timer, so it
+ * froze for that millisecond on every rgblight flush -- and because Cortex-M
+ * SysTick has a single pending bit, the missed ticks were lost rather than
+ * queued. That showed up as a visible brightness blink on the indicators
+ * whenever an *animated* underglow mode was running (static modes only flush on
+ * change, so they were fine). ws2812_spi.c uses spiStartSend(), which is async
+ * DMA and never masks interrupts.
+ *
+ * B15 is SPI2_MOSI. WS2812_SPI_SCK_PIN is deliberately NOT defined: SCK would
+ * be B13, which is a matrix column here. The SPI master still clocks the shift
+ * register internally, the pin just is not routed.
+ *
+ * Divisor: SPI2 lives on APB1 = 36 MHz, and the driver encodes 4 SPI bits per
+ * WS2812 bit, so it wants ~3.2 MHz. 36/8 = 4.5 MHz -> 222 ns per SPI bit:
+ *   bit period 889 ns (spec 1250 +/-600), T1H 667 ns (spec 700 +/-150),
+ *   T0H 222 ns (spec 350 +/-150) -- all in spec.
+ * The default divisor of 16 is meant for the 48 MHz F072 boards and would give
+ * T1H = 1333 ns here, far out of spec. */
+#define WS2812_SPI_DRIVER SPID2
+#define WS2812_SPI_DIVISOR 8
+
 /* Number of PWM steps per frame. Must be a power of two. */
 #ifndef ORION_LED_PWM_LEVELS
 #    define ORION_LED_PWM_LEVELS 32

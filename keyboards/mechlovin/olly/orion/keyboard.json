@@ -45,7 +45,8 @@
         }
     },
     "ws2812": {
-        "pin": "B15"
+        "pin": "B15",
+        "driver": "spi"
     },
     "processor": "STM32F103",
     "bootloader": "stm32duino",
