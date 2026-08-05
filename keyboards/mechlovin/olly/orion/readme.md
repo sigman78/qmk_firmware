@@ -48,3 +48,17 @@ from a keymap's own `config.h`:
 
 To get the stock look back, set `ORION_LED_ON_LEVEL` to `255` and `ORION_LED_FADE_STEP`
 to `255`.
+
+## VIA
+
+    make mechlovin/olly/orion:via
+
+The stm32duino bootloader leaves only 56K of flash (`0x08002000`-`0x08010000`), and the
+base firmware already fills ~80% of it, so the `via` keymap enables `LTO_ENABLE` to make
+room. With LTO the VIA build is actually smaller than the non-LTO default one.
+
+Emulated EEPROM is 1K (wear levelling over MCU flash), of which VIA's dynamic keymaps
+take 816 bytes at the default 4 layers (4 x 6 rows x 17 cols x 2). That leaves little
+room for macros, and it is why `DYNAMIC_KEYMAP_LAYER_COUNT` is not raised to 5 to match
+the five layer LEDs -- 5 layers would need 1020 bytes and fail the build. Raising
+`WEAR_LEVELING_BACKING_SIZE` to 4096 would buy the space at the cost of 2K more flash.
