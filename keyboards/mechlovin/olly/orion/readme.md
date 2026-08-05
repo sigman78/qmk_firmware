@@ -53,6 +53,32 @@ scale with brightness, because the ramp travels `0..ORION_LED_ON_LEVEL`.
 To get the stock look back, set `ORION_LED_ON_LEVEL` to `255` and both fade steps to
 `255`.
 
+### Underglow is driven over SPI, not bit-banged
+
+`keyboard.json` selects `"driver": "spi"` for the WS2812 underglow, with
+`WS2812_SPI_DRIVER SPID2` and `WS2812_SPI_DIVISOR 8` in `config.h`, plus the
+`halconf.h`/`mcuconf.h` needed to enable SPI2.
+
+This is not cosmetic. `ws2812_bitbang.c` wraps a whole frame in `chSysLock()`,
+masking SysTick for about a millisecond. The status-LED soft PWM runs off a
+ChibiOS virtual timer, so it froze for that millisecond on every `rgblight`
+flush with the pins stuck mid-cycle — and because Cortex-M SysTick has a single
+pending bit, the missed ticks were lost rather than queued. The result was a
+visible brightness blink on the indicators whenever an *animated* underglow mode
+was running; static modes only flush on change and were unaffected.
+`ws2812_spi.c` uses `spiStartSend()`, which is asynchronous DMA and never masks
+interrupts.
+
+`WS2812_SPI_SCK_PIN` is deliberately left undefined — SCK would be `B13`, which
+is a matrix column here. The SPI master clocks its shift register internally, so
+only MOSI (`B15`) needs routing.
+
+The divisor is 8 rather than the driver default of 16. The driver encodes 4 SPI
+bits per WS2812 bit and so targets ~3.2 MHz; the other QMK boards using it are
+STM32F072 with APB1 at 48 MHz, where /16 gives 3.0 MHz. This board's APB1 runs at
+36 MHz, so /16 would yield T1H = 1333 ns, far outside the WS2812 tolerance. /8
+gives 4.5 MHz — an 889 ns bit period with T1H 667 ns and T0H 222 ns, all in spec.
+
 ### Adjusting brightness from VIA
 
 The `via` keymap exposes a **Status LEDs → Indicators → Brightness** slider (0–255) that
