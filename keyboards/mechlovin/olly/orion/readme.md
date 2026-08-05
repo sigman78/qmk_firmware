@@ -22,3 +22,29 @@ See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_to
 - By keycode: Tap RESET keycode.
 - By bootmagic: hold ESC key while plugging in.
 - By hardware: Push reset button on bottom of the PCB while the PCB is plugged in.
+
+## Status LED brightness and fading
+
+The three lock indicators (Caps/Num/Scroll) and the five layer LEDs are driven by a
+software PWM engine rather than plain on/off GPIO, so they sit at a reduced brightness
+and fade smoothly when they change state. Which LED lights under which condition is
+unchanged; only brightness and the transition differ.
+
+Num Lock and Scroll Lock sit on `A13`/`A14` (SWDIO/SWCLK), which have no timer
+alternate function, so hardware PWM is not possible for them — all eight LEDs use the
+same software path instead.
+
+The defaults live in `keyboards/mechlovin/olly/orion/config.h` and can be overridden
+from a keymap's own `config.h`:
+
+| Define | Default | Meaning |
+|---|---|---|
+| `ORION_LED_ON_LEVEL` | `144` | Brightness of an LED in the "on" state, 0–255 perceptual. Gamma corrected onto the PWM duty range; 144 gives ~32% duty. Use `255` for full brightness. |
+| `ORION_LED_FADE_INTERVAL_MS` | `8` | How often the fade ramp advances. |
+| `ORION_LED_FADE_STEP` | `12` | How many of the 255 levels each ramp step moves. With the defaults a full fade takes ~96 ms. |
+| `ORION_LED_PWM_LEVELS` | `32` | PWM steps per frame. Must be a power of two. |
+| `ORION_LED_TICK_US` | `160` | PWM tick period. 160 µs × 32 levels ≈ 195 Hz frame rate. |
+| `ORION_LED_ACTIVE_LOW` | `0` | Set to `1` if the LEDs are lit by driving the pin low. |
+
+To get the stock look back, set `ORION_LED_ON_LEVEL` to `255` and `ORION_LED_FADE_STEP`
+to `255`.
