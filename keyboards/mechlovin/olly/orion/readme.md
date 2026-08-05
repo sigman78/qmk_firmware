@@ -39,15 +39,31 @@ from a keymap's own `config.h`:
 
 | Define | Default | Meaning |
 |---|---|---|
-| `ORION_LED_ON_LEVEL` | `144` | Brightness of an LED in the "on" state, 0–255 perceptual. Gamma corrected onto the PWM duty range; 144 gives ~32% duty. Use `255` for full brightness. |
-| `ORION_LED_FADE_INTERVAL_MS` | `8` | How often the fade ramp advances. |
-| `ORION_LED_FADE_STEP` | `12` | How many of the 255 levels each ramp step moves. With the defaults a full fade takes ~96 ms. |
+| `ORION_LED_ON_LEVEL` | `120` | Brightness of an LED in the "on" state, 0–255 perceptual. Gamma corrected onto the PWM duty range; 120 gives ~22% duty. Use `255` for full brightness. With VIA this is only the power-on default. |
+| `ORION_LED_FADE_INTERVAL_MS` | `5` | How often the fade ramp advances. |
+| `ORION_LED_FADE_STEP` | `8` | Levels per step when fading **in**. |
+| `ORION_LED_FADE_OUT_STEP` | `5` | Levels per step when fading **out**. Smaller than the fade-in step so LEDs decay like an incandescent; the ratio 8/5 makes switching off 1.6× longer than switching on. Set equal to `ORION_LED_FADE_STEP` for a symmetric fade. |
 | `ORION_LED_PWM_LEVELS` | `32` | PWM steps per frame. Must be a power of two. |
 | `ORION_LED_TICK_US` | `160` | PWM tick period. 160 µs × 32 levels ≈ 195 Hz frame rate. |
 | `ORION_LED_ACTIVE_LOW` | `0` | Set to `1` if the LEDs are lit by driving the pin low. |
 
-To get the stock look back, set `ORION_LED_ON_LEVEL` to `255` and `ORION_LED_FADE_STEP`
-to `255`.
+At the default on-level that gives roughly a 75 ms fade in and 120 ms fade out. Both
+scale with brightness, because the ramp travels `0..ORION_LED_ON_LEVEL`.
+
+To get the stock look back, set `ORION_LED_ON_LEVEL` to `255` and both fade steps to
+`255`.
+
+### Adjusting brightness from VIA
+
+The `via` keymap exposes a **Status LEDs → Indicators → Brightness** slider (0–255) that
+changes the indicator brightness live and stores it in EEPROM, so it survives a replug.
+It uses the keyboard-specific VIA channel (`id_custom_channel`, value id 1) and two bytes
+of `VIA_EEPROM_CUSTOM_CONFIG_SIZE` — a magic byte plus the level. The magic byte is what
+lets a never-written EEPROM fall back to `ORION_LED_ON_LEVEL`, since `0x00` and `0xFF`
+are both legitimate brightness values.
+
+The matching VIA definition is `orion_via.json` in this folder; load it via VIA's Design
+tab (Settings → Show Design tab).
 
 ## VIA
 

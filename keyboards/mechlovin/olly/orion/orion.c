@@ -68,9 +68,32 @@ static inline uint8_t orion_led_gamma(uint8_t level) {
     return (uint8_t)(((uint32_t)level * level * ORION_LED_PWM_MAX) / (255UL * 255UL));
 }
 
-static inline void orion_led_set(uint8_t index, bool on) {
-    orion_led_target[index] = on ? ORION_LED_ON_LEVEL : 0;
+/* Live "on" brightness. Compile-time default, overridable at runtime from VIA. */
+static uint8_t orion_led_on_level = ORION_LED_ON_LEVEL;
+/* Which LEDs are logically lit, so a brightness change can be re-applied to
+ * them without waiting for the next lock/layer event. */
+static uint8_t orion_led_on_mask;
+
+static void orion_led_set(uint8_t index, bool on) {
+    if (on) {
+        orion_led_on_mask |= (uint8_t)(1u << index);
+    } else {
+        orion_led_on_mask &= (uint8_t) ~(1u << index);
+    }
+    orion_led_target[index] = on ? orion_led_on_level : 0;
 }
+
+#ifdef VIA_ENABLE
+/* Only the VIA control changes brightness at runtime; without it the level is
+ * fixed at compile time and this would be an unused function (-Werror). */
+static void orion_led_apply_brightness(void) {
+    for (uint8_t i = 0; i < ORION_LED_COUNT; i++) {
+        if (orion_led_on_mask & (uint8_t)(1u << i)) {
+            orion_led_target[i] = orion_led_on_level;
+        }
+    }
+}
+#endif
 
 static void orion_led_set_layers(layer_state_t state) {
     orion_led_set(ORION_LED_LAYER_0, layer_state_cmp(state, 0));
@@ -132,10 +155,12 @@ void housekeeping_task_kb(void) {
             if (level == target) {
                 continue;
             }
+            /* Asymmetric on purpose: the downward ramp is slower, so an LED
+             * going out decays like an incandescent rather than snapping off. */
             if (target > level) {
                 level = (target - level > ORION_LED_FADE_STEP) ? level + ORION_LED_FADE_STEP : target;
             } else {
-                level = (level - target > ORION_LED_FADE_STEP) ? level - ORION_LED_FADE_STEP : target;
+                level = (level - target > ORION_LED_FADE_OUT_STEP) ? level - ORION_LED_FADE_OUT_STEP : target;
             }
 
             orion_led_level[i] = level;
@@ -162,3 +187,73 @@ layer_state_t layer_state_set_kb(layer_state_t state) {
     orion_led_set_layers(state);
     return state;
 }
+
+#ifdef VIA_ENABLE
+#    include "via.h"
+
+/* One custom VIA control on the keyboard-specific channel: status LED
+ * brightness, 0-255 on the same perceptual scale as ORION_LED_ON_LEVEL. */
+enum orion_via_value_id {
+    id_orion_led_brightness = 1,
+};
+
+#    define ORION_VIA_CONFIG_MAGIC 0x4C
+
+static void orion_via_config_save(void) {
+    uint8_t cfg[VIA_EEPROM_CUSTOM_CONFIG_SIZE] = {ORION_VIA_CONFIG_MAGIC, orion_led_on_level};
+    via_update_custom_config(cfg, 0, sizeof(cfg));
+}
+
+/* Called by via_init() before it validates/reinitialises the EEPROM, so this
+ * is the sanctioned place to read keyboard-specific config. */
+void via_init_kb(void) {
+    uint8_t cfg[VIA_EEPROM_CUSTOM_CONFIG_SIZE] = {0};
+
+    if (via_eeprom_is_valid()) {
+        via_read_custom_config(cfg, 0, sizeof(cfg));
+    }
+    orion_led_on_level = (cfg[0] == ORION_VIA_CONFIG_MAGIC) ? cfg[1] : ORION_LED_ON_LEVEL;
+    orion_led_apply_brightness();
+}
+
+void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
+    // data = [ command_id, channel_id, value_id, value_data ]
+    uint8_t *command_id = &data[0];
+    uint8_t *channel_id = &data[1];
+    uint8_t *value_id   = &data[2];
+    uint8_t *value_data = &data[3];
+
+    if (*channel_id != id_custom_channel) {
+        *command_id = id_unhandled;
+        return;
+    }
+
+    switch (*command_id) {
+        case id_custom_set_value:
+            if (*value_id == id_orion_led_brightness) {
+                orion_led_on_level = value_data[0];
+                orion_led_apply_brightness();
+            } else {
+                *command_id = id_unhandled;
+            }
+            break;
+
+        case id_custom_get_value:
+            if (*value_id == id_orion_led_brightness) {
+                value_data[0] = orion_led_on_level;
+            } else {
+                *command_id = id_unhandled;
+            }
+            break;
+
+        /* No value_id on save -- VIA sends only [command_id, channel_id]. */
+        case id_custom_save:
+            orion_via_config_save();
+            break;
+
+        default:
+            *command_id = id_unhandled;
+            break;
+    }
+}
+#endif // VIA_ENABLE
