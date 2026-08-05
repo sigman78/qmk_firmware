@@ -28,16 +28,96 @@ const is31fl3731_led_t PROGMEM g_is31fl3731_leds[IS31FL3731_LED_COUNT] = {
     {0, C5_15}, {0, C4_15}, {0, C4_16}, {0, C6_15}, {0, C6_16}, {0, C5_16},
 };
 
+#ifdef LED_MATRIX_ENABLE
+
+/* Dimmed, fading status indicators -- see config.h for the tunables.
+ *
+ * Unlike the Olly Orion, which drives its indicators straight off GPIO and
+ * needs a software PWM engine to dim them, these sit on the IS31FL3731 and
+ * already have 8-bit hardware PWM per LED. Dimming is just writing a smaller
+ * value; all that is needed on top is a ramp so state changes fade. */
+
+enum tcv3_indicator {
+    TCV3_IND_CAPS_KEY, /* Caps Lock *switch* LED, part of the key matrix */
+    TCV3_IND_NUM_LOCK,
+    TCV3_IND_CAPS_LOCK,
+    TCV3_IND_SCROLL_LOCK,
+    TCV3_IND_LAYER_0,
+    TCV3_IND_LAYER_1,
+    TCV3_IND_LAYER_2,
+    TCV3_IND_LAYER_3,
+    TCV3_IND_MARKER, /* centre marker of the six-LED layer display */
+    TCV3_IND_COUNT,
+};
+
+static const uint8_t tcv3_indicator_led[TCV3_IND_COUNT] = {
+    [TCV3_IND_CAPS_KEY]    = 55,
+    [TCV3_IND_NUM_LOCK]    = 101,
+    [TCV3_IND_CAPS_LOCK]   = 102,
+    [TCV3_IND_SCROLL_LOCK] = 103,
+    [TCV3_IND_LAYER_0]     = 104,
+    [TCV3_IND_LAYER_1]     = 105,
+    [TCV3_IND_LAYER_2]     = 106,
+    [TCV3_IND_LAYER_3]     = 108,
+    [TCV3_IND_MARKER]      = 107,
+};
+
+static uint8_t tcv3_indicator_level[TCV3_IND_COUNT];
+static uint8_t tcv3_indicator_target[TCV3_IND_COUNT];
+
+/* Perceptual level (0-255) to PWM duty. Squaring roughly cancels the eye's
+ * response, so a linear ramp of `level` reads as a linear fade. */
+static inline uint8_t tcv3_indicator_gamma(uint8_t level) {
+    return (uint8_t)(((uint16_t)level * level) / 255U);
+}
+
+static inline void tcv3_indicator_set(uint8_t index, bool on) {
+    tcv3_indicator_target[index] = on ? TCV3_LED_ON_LEVEL : 0;
+}
+
+void housekeeping_task_kb(void) {
+    static uint32_t last_fade = 0;
+
+    if (timer_elapsed32(last_fade) >= TCV3_LED_FADE_INTERVAL_MS) {
+        last_fade = timer_read32();
+
+        for (uint8_t i = 0; i < TCV3_IND_COUNT; i++) {
+            uint8_t level  = tcv3_indicator_level[i];
+            uint8_t target = tcv3_indicator_target[i];
+
+            if (level == target) {
+                continue;
+            }
+            /* Asymmetric: the downward ramp is slower, so an indicator going
+             * out decays like an incandescent rather than snapping off. */
+            if (target > level) {
+                level = (target - level > TCV3_LED_FADE_STEP) ? level + TCV3_LED_FADE_STEP : target;
+            } else {
+                level = (level - target > TCV3_LED_FADE_OUT_STEP) ? level - TCV3_LED_FADE_OUT_STEP : target;
+            }
+            tcv3_indicator_level[i] = level;
+        }
+    }
+    /* No housekeeping_task_user() call -- housekeeping_task() invokes the _kb
+     * and _user hooks separately, unlike the *_init_kb hooks. */
+}
+
+#endif // LED_MATRIX_ENABLE
+
 void keyboard_post_init_kb(void) {
 #ifdef RGBLIGHT_ENABLE
     rgblight_sethsv_at(255, 255, 255, 0);
 #endif
 #ifdef LED_MATRIX_ENABLE
-    /* Center/marker LED in the six-LED layer display. */
-    led_matrix_set_value(107, 0xFF);
+    /* Light the default layer and the marker at boot so they fade up rather
+     * than waiting for the first layer change. */
+    tcv3_indicator_set(TCV3_IND_MARKER, true);
+    tcv3_indicator_set(TCV3_IND_LAYER_0, get_highest_layer(layer_state) == 0);
 #endif
     keyboard_post_init_user();
 }
+
+#ifdef LED_MATRIX_ENABLE
 
 bool led_matrix_indicators_kb(void) {
     if (!led_matrix_indicators_user()) {
@@ -45,24 +125,38 @@ bool led_matrix_indicators_kb(void) {
     }
 
     led_t host_leds = host_keyboard_led_state();
-    if (host_leds.caps_lock) {
-        led_matrix_set_value(55, 0xFF); /* Caps Lock switch LED */
+    tcv3_indicator_set(TCV3_IND_CAPS_KEY, host_leds.caps_lock);
+    tcv3_indicator_set(TCV3_IND_NUM_LOCK, host_leds.num_lock);
+    tcv3_indicator_set(TCV3_IND_CAPS_LOCK, host_leds.caps_lock);
+    tcv3_indicator_set(TCV3_IND_SCROLL_LOCK, host_leds.scroll_lock);
+    tcv3_indicator_set(TCV3_IND_MARKER, true);
+
+    for (uint8_t i = 0; i < TCV3_IND_COUNT; i++) {
+        uint8_t level = tcv3_indicator_level[i];
+
+        /* The Caps Lock switch LED is a normal key LED: only override it while
+         * it has something to show, otherwise hand it back to the running
+         * matrix effect instead of pinning it to black. The dedicated
+         * indicators have no effect behind them, so they are always written. */
+        if (i == TCV3_IND_CAPS_KEY && level == 0) {
+            continue;
+        }
+        led_matrix_set_value(tcv3_indicator_led[i], tcv3_indicator_gamma(level));
     }
-    led_matrix_set_value(101, host_leds.num_lock ? 0xFF : 0x00);
-    led_matrix_set_value(102, host_leds.caps_lock ? 0xFF : 0x00);
-    led_matrix_set_value(103, host_leds.scroll_lock ? 0xFF : 0x00);
-    led_matrix_set_value(107, 0xFF);
     return true;
 }
 
+#endif // LED_MATRIX_ENABLE
+
 layer_state_t layer_state_set_kb(layer_state_t state) {
-    state         = layer_state_set_user(state);
+    state = layer_state_set_user(state);
+#ifdef LED_MATRIX_ENABLE
     uint8_t layer = get_highest_layer(state);
 
-    led_matrix_set_value(104, layer == 0 ? 0xFF : 0x00);
-    led_matrix_set_value(105, layer == 1 ? 0xFF : 0x00);
-    led_matrix_set_value(106, layer == 2 ? 0xFF : 0x00);
-    led_matrix_set_value(108, layer == 3 ? 0xFF : 0x00);
-
+    tcv3_indicator_set(TCV3_IND_LAYER_0, layer == 0);
+    tcv3_indicator_set(TCV3_IND_LAYER_1, layer == 1);
+    tcv3_indicator_set(TCV3_IND_LAYER_2, layer == 2);
+    tcv3_indicator_set(TCV3_IND_LAYER_3, layer == 3);
+#endif
     return state;
 }
