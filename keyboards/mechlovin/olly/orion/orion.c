@@ -142,8 +142,8 @@ void housekeeping_task_kb(void) {
             orion_led_duty[i]  = orion_led_gamma(level);
         }
     }
-
-    housekeeping_task_user();
+    /* No housekeeping_task_user() call here -- unlike the *_init_kb hooks,
+     * housekeeping_task() invokes the _kb and _user hooks separately. */
 }
 
 bool led_update_kb(led_t led_state) {
