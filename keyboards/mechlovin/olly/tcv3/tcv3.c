@@ -39,6 +39,13 @@ void keyboard_post_init_kb(void) {
     keyboard_post_init_user();
 }
 
+/* Highest active layer, tracked so led_matrix_indicators_kb() can re-assert the
+ * layer LEDs on every frame. Writing them only on a layer change is not enough:
+ * indices 101-109 sit on the same IS31FL3731 as the per-key LEDs, so whatever
+ * LED matrix effect is running repaints them each frame. Anything not written
+ * every frame ends up showing the effect instead of its indicator state. */
+static uint8_t tcv3_active_layer = 0;
+
 bool led_matrix_indicators_kb(void) {
     if (!led_matrix_indicators_user()) {
         return false;
@@ -51,18 +58,22 @@ bool led_matrix_indicators_kb(void) {
     led_matrix_set_value(101, host_leds.num_lock ? 0xFF : 0x00);
     led_matrix_set_value(102, host_leds.caps_lock ? 0xFF : 0x00);
     led_matrix_set_value(103, host_leds.scroll_lock ? 0xFF : 0x00);
+
+    led_matrix_set_value(104, tcv3_active_layer == 0 ? 0xFF : 0x00);
+    led_matrix_set_value(105, tcv3_active_layer == 1 ? 0xFF : 0x00);
+    led_matrix_set_value(106, tcv3_active_layer == 2 ? 0xFF : 0x00);
+    led_matrix_set_value(108, tcv3_active_layer == 3 ? 0xFF : 0x00);
+
+    /* Centre marker of the layer display. */
     led_matrix_set_value(107, 0xFF);
+    /* The sixth layer LED has no assignment yet; hold it off rather than
+     * leaving the running effect to light it. */
+    led_matrix_set_value(109, 0x00);
     return true;
 }
 
 layer_state_t layer_state_set_kb(layer_state_t state) {
-    state         = layer_state_set_user(state);
-    uint8_t layer = get_highest_layer(state);
-
-    led_matrix_set_value(104, layer == 0 ? 0xFF : 0x00);
-    led_matrix_set_value(105, layer == 1 ? 0xFF : 0x00);
-    led_matrix_set_value(106, layer == 2 ? 0xFF : 0x00);
-    led_matrix_set_value(108, layer == 3 ? 0xFF : 0x00);
-
+    state              = layer_state_set_user(state);
+    tcv3_active_layer  = get_highest_layer(state);
     return state;
 }
